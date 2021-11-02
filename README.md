@@ -1,5 +1,5 @@
 # rocketMqFileView
-解析rocketMQ的存储文件，例如commitlog index consumerGroup等文件
+解析rocketMQ的存储文件，例如commitlog index consumequeue等文件
 
 ## 编译运行
 

@@ -18,7 +18,7 @@ func ViewFile(fileType int, path string, offSet uint64) {
 	case 3:
 		viewIndexFile(path)
 	default:
-		panic("不支持的文件类型 可选范围 1:consumergroup文件 2:commitlog 3:index")
+		panic("不支持的文件类型 可选范围 1:consumequeue 2:commitlog 3:index")
 	}
 }
 

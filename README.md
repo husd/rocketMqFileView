@@ -14,7 +14,7 @@ Usage of ./mqFileView:
   -offSet uint
     	只对-t=2 有效，表示读取commitlog的什么位置的数据，这个commitLogOffSet不能随意写，必须是有效的offSet
   -t int
-    	文件的类型 1:consumergroup文件 2:commitlog 3:index (default 2)
+    	文件的类型 1:consumequeue 2:commitlog 3:index (default 2)
 ```
 
 ## 解析 commitlog

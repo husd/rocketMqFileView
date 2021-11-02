@@ -6,7 +6,7 @@ import (
 )
 
 /**
- *
+ * 读取 rocketmq的 index 文件
  * @author hushengdong
  */
 func viewIndexFile(path string) {

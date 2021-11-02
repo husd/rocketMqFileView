@@ -9,20 +9,13 @@ import (
  *
  * @author hushengdong
  */
-func viewIndexFile(path string, count int) {
+func viewIndexFile(path string) {
 
 	buf, err := ioutil.ReadFile(path)
 	if err != nil {
 		panic("读取index文件失败: " + path)
 	}
 	// header占40个字节
-
-	//8位 该索引文件的第一个消息(Message)的存储时间(落盘时间)
-	//8位 该索引文件的最后一个消息(Message)的存储时间(落盘时间)
-	//8位 该索引文件第一个消息(Message)的在CommitLog(消息存储文件)的物理位置偏移量(可以通过该物理偏移直接获取到该消息)
-	//8位 该索引文件最后一个消息(Message)的在CommitLog(消息存储文件)的物理位置偏移量
-	//4位 该索引文件目前的hash slot的个数
-	//4位 索引文件目前的索引个数
 	firstMsgTime := bytesToInt64(buf[0:8])
 	lastMsgTime := bytesToInt64(buf[8:16])
 	firstMsgOffset := bytesToInt64(buf[16:24])
@@ -39,48 +32,52 @@ func viewIndexFile(path string, count int) {
 	fmt.Println("4位 索引文件目前的索引个数:", indexCount)
 
 	// slot array ，每个4字节，有50W个，占 4*50W 个字节 这里是根据 key 的hashcode算出来的 ，这里我们遍历下，找出最多10个key的索引
-	total := 0
-	max := 5000000
-	slotNum := 1
-	for slotNum < max && total < count {
+	slotCount := 0 // 这个是存在索引的slot的数量
+	max := hashSlotNum
+	slotNum := 0
+
+	slotListNodeCount := 0
+	for slotNum < max {
 		// 程序里是根据 hashcode(key) % 5000000 算出来的 这里我们挨个查看
-		slotPos := calcSlotPosition(slotNum)
-		indexNum := bytesToInt32(buf[slotPos : slotPos+4])
-		if indexNum > uint32(0) {
-			indexPos := calcIndexPosition(indexNum)
-			//读取指定的文件的位置 index 固定占 20个字节
-			tempBuf := buf[indexPos : indexPos+20]
-			hashCode := bytesToInt32(tempBuf[0:4])
-			commitLogOffSet := bytesToInt64(tempBuf[4:12])
-			timestamp := bytesToInt32(tempBuf[12:16])
-			nextIndexOffSet := bytesToInt32(tempBuf[16:20])
-			fmt.Println("---index slot table pos:", slotNum, " hashcode:", hashCode, " commitLogOffSet:", commitLogOffSet, " timestamp:", timestamp, " nextIndexOffSet:", nextIndexOffSet)
-			total++
+		absSlotPos := calcSlotPosition(slotNum)
+		slotValue := bytesToInt32(buf[absSlotPos : absSlotPos+hash_slot_size])
+		if slotValue > uint32(0) {
+			// 读取指定的文件的位置 index 固定占 20个字节
+			for nextIndexToRead := slotValue; ; {
+				absIndexPos := calcIndexPosition(nextIndexToRead)
+				hashCode := bytesToInt32(buf[absIndexPos : absIndexPos+4])
+				commitLogOffSet := bytesToInt64(buf[absIndexPos+4 : absIndexPos+4+8])
+				timeDiff := bytesToInt32(buf[absIndexPos+4+8 : absIndexPos+4+8+4]) // timeDiff偏移量是秒 这个细节要注意一下
+				prevIndexRead := bytesToInt32(buf[absIndexPos+4+8+4 : absIndexPos+4+8+4+4])
+
+				//absTimestamp := firstMsgTime + uint64(timeDiff) * uint64(1000) // 索引文件里是 相对于第一个消息的时间的偏移量 单位是秒，所以要乘1000 还原为毫秒
+				fmt.Println("---index文件明细数据: slotNum:", slotNum, " hashcode:", hashCode, " commitLogOffSet:", commitLogOffSet, " timestamp:", timeDiff, " prevIndexRead:", prevIndexRead)
+				slotListNodeCount++
+				nextIndexToRead = prevIndexRead
+				if prevIndexRead <= 0 {
+					break
+				}
+			}
+			slotCount++
 		}
 		slotNum++
 	}
-	//fmt.Println("-------end current:",slotNum)
+	fmt.Println("-------end slotCount:", slotCount, " 链表节点数量:", slotListNodeCount)
 }
 
-//key-->计算hash值-->hash值对500万取余算出对应的slot序号-->
-//根据40+(n-1)*4(公式1)算出该slot在文件中的位置-->读取slot值，也就是index序号-->
-// 根据40+500000*4+(s-1)*20(公式2)算出该index在文件中的位置-->读取该index-->
-// 将key的hash值以及传入的时间范围与index的keyHash值以及timeDiff值进行比对。
-
 // 第n个slot在indexFile中的起始位置是这样:40+(n-1)*4
-func calcSlotPosition(n int) int {
+func calcSlotPosition(slotNum int) int {
 
-	if n <= 0 {
-		panic("无效的slot数量")
-	}
-	return 40 + (n-1)*4
+	return index_header_size + slotNum*hash_slot_size
 }
 
 // 第n个index在indexFile中的起始位置是这样: 40+5000000*4+(n-1)*20
-func calcIndexPosition(n uint32) int {
+func calcIndexPosition(nextIndexToRead uint32) int {
 
-	if n <= 0 {
-		panic("无效的slot数量")
-	}
-	return 40 + 5000000*4 + (int(n)-1)*20
+	return index_header_size + hashSlotNum*hash_slot_size + int(nextIndexToRead)*index_size
 }
+
+const index_header_size int = 40
+const hashSlotNum int = 5000000
+const hash_slot_size int = 4
+const index_size int = 20
